@@ -1,0 +1,56 @@
+VERSION: 1.1.0
+TASK
+Analyze the attached source video (visuals + audio) together with the transcript below, then return:
+1. "video_analysis": your understanding of the whole video.
+2. "candidates": the best {{candidate_target}} short-form clip candidates, ranked best first.
+
+PROJECT
+- Project: {{project_name}}
+- Campaign: {{campaign_name}}
+- Target platforms: {{platforms}}
+- The user wants about {{clip_count}} finished clips; return {{candidate_target}} candidates so weaker ones can be discarded.
+- Source duration: {{source_duration}} seconds
+- Every clip MUST be between {{min_duration}} and {{max_duration}} seconds long.
+
+CAMPAIGN RULES (structured; null = not stated -- do not invent)
+{{rules_json}}
+
+ORIGINAL CAMPAIGN RULES TEXT
+<<<
+{{rules_text}}
+>>>
+
+TRANSCRIPT (local Whisper; format: [start-end seconds] text)
+<<<
+{{transcript}}
+>>>
+
+FOR EACH CANDIDATE PROVIDE
+- candidate_id: "c01", "c02", ... in rank order
+- start_time / end_time (seconds), duration
+- exact_opening_words / exact_closing_words (verbatim from the transcript)
+- topic (3-8 words), summary (1-2 sentences, faithful to what is said)
+- reason_it_works: concise, specific reasoning (e.g. "Specific $40k mistake + open loop about why + clear lesson as payoff")
+- target_audience
+- hook_type: one of surprising_statement, opinion, mistake, confession, number, warning, question, counterintuitive, prediction, before_after, disagreement, uncommon_knowledge, story, humor, other
+- story_structure: one short line each for hook, context, tension, payoff
+- suggested_hook_text: the best on-screen hook overlay (max ~8 words). It must be accurate to the clip -- no claims the speaker didn't make, no clickbait lies.
+- alternative_hooks: 2 more accurate hook overlays with different angles
+- editing_strategy: pacing, where to punch in, what to emphasise, whether a wider frame is needed for reactions
+- caption_emphasis_words: 3-8 short words/phrases worth highlighting in captions (numbers, strong words, key phrases) copied exactly as spoken. Do not list every word.
+- suggested_zoom_points: 1-4 moments (absolute seconds) for a subtle punch-in: strong statement, punchline, emotional shift, revelation, question, transition. Space them out.
+- suggested_broll_points: 0-3 concepts where licensed B-roll could help (absolute seconds, duration 1-3s, plain search query, reason). Leave empty if B-roll wouldn't help or the campaign disallows it.
+- sound_cues: 0-4 sound-design moments (absolute seconds) that a professional short-form editor would genuinely hit with a sound effect. Each has a category, a short reason and intensity (subtle / medium / strong). Categories:
+  whoosh (transition, topic switch), impact (punchline, shocking number, hard statement), riser (tension building INTO the moment at this timestamp -- the payoff lands here), pop (a key word or list item landing), click (steps, UI), ding (an idea, lesson or right answer), cash (money actually discussed), camera (photo/screenshot mentioned or shown), typing (writing/texting/coding), paper (notes, contracts), tech (AI, software, data, hacking), wrong (a mistake or failure revealed), tick (time pressure), tension (suspense before a reveal), reaction (audience-style reaction -- only for clearly funny or shocking moments), comedic (cartoon/meme sound -- ONLY if the moment is plainly humorous and a comedic sound would not mock a serious topic).
+  Use them sparingly and only where the content earns it; empty is fine for calm or serious clips. Never place a sound over sensitive moments (grief, illness, tragedy).
+- platform_fit: 0-10 for tiktok, instagram, youtube_shorts, plus a short note
+- campaign_compliance: status COMPLIANT / WARNING / FAILED / UNKNOWN with reasons, judged against the campaign rules (e.g. prohibited topics)
+- subscores, penalties, viral_score (as defined in your instructions)
+
+SELECTION RULES
+- Spread candidates across the video; don't cluster them unless the best material really is concentrated.
+- Candidates may overlap in time only if they have genuinely different hooks and narratives.
+- Never select two candidates that make essentially the same point -- keep the stronger one.
+- Prefer starting right before the hook at the beginning of a sentence, and ending right after the payoff.
+
+Return ONLY JSON matching the schema.

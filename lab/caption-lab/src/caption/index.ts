@@ -1,0 +1,10 @@
+// Public API of the kinetic caption engine (framework-free; safe to import from any renderer or service).
+export * from './types.ts'
+export { compileCaptions, getCaptionFrameState, visiblePhrases, frameAt, frameTime, type CompileOptions } from './engine.ts'
+export { parseTranscript, autoTime, normalizeWords, activeWordAt } from './timeline.ts'
+export { segmentPhrases } from './segmenter.ts'
+export { HeuristicImportanceAnalyzer, assignLevels, type ImportanceAnalyzer, type WordScore } from './importance.ts'
+export { layoutPhrase, chooseStrategy, applyCase, safeArea } from './layout.ts'
+export { entrance, exit, speak, planAnimations, INTENSITY_POOLS } from './animation.ts'
+export { DEFAULT_CONFIG, PRESETS, presetConfig, deepMerge, type CaptionPreset, type DeepPartial } from './presets.ts'
+export { DEFAULT_THEME, FONT_CHOICES, type CaptionTheme } from './theme.ts'

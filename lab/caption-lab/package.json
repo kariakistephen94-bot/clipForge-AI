@@ -1,0 +1,13 @@
+{
+  "name": "caption-lab",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Isolated lab for the kinetic caption engine. Not part of the production app.",
+  "scripts": {
+    "dev": "vite --port 5180 --host 127.0.0.1",
+    "build": "tsc -p tsconfig.json && vite build",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --experimental-strip-types --no-warnings --test tests/engine.test.ts"
+  }
+}

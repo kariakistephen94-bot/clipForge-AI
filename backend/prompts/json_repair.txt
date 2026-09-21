@@ -1,0 +1,12 @@
+VERSION: 1.0.0
+Your previous response could not be used because it was not valid JSON for the required schema.
+
+Problems found:
+{{errors}}
+
+Previous response:
+<<<
+{{previous}}
+>>>
+
+Return the corrected response as ONLY a JSON object that matches the schema. Keep all the original content and meaning; fix only structure, types and missing required fields. No commentary, no markdown fences.

@@ -1,0 +1,25 @@
+VERSION: 1.0.0
+You are a senior short-form editor re-evaluating ONE clip after its boundaries were adjusted.
+You only have the transcript of the clip (no video), so keep the visual subscore close to the earlier value unless the text clearly changes it.
+
+CAMPAIGN RULES (null = not stated)
+{{rules_json}}
+
+TARGET PLATFORMS: {{platforms}}
+ALLOWED DURATION: {{min_duration}}-{{max_duration}} seconds
+
+PREVIOUS ANALYSIS
+{{previous_json}}
+
+NEW CLIP: {{start}}s to {{end}}s ({{duration}} seconds)
+CLIP TRANSCRIPT
+<<<
+{{clip_transcript}}
+>>>
+
+Re-score using the same rubric (hook 0-20, clarity 0-15, curiosity 0-15, emotion 0-10, specificity 0-10, shareability 0-10, retention 0-10, visual 0-5, campaign_fit 0-5) and list penalties (starts mid-thought, ends before payoff, needs outside context, greeting/housekeeping, rambling, prohibited content).
+Update reason_it_works, suggested_hook_text and 2 alternative_hooks so they are accurate for the NEW boundaries -- never claim anything the clip doesn't say.
+boundary_feedback: one sentence on whether the start/end are good and how to improve them.
+candidate_id must be "{{candidate_id}}".
+
+Return ONLY JSON matching the schema.
