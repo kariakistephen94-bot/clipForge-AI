@@ -231,7 +231,8 @@ def run_long_render(project_id: str, tracker: JobTracker, ids: list[str] | None,
             project_id=project_id, index=c["rank"], result=res, title=title, titles=titles, data=d,
             prompts=prompts, compliance=report.model_dump(), source_file=S["name"] or Path(S["path"]).name,
             start=c["start"], end=c["end"], score=c["score"], campaign=P["campaign"],
-            extra={"sound_design": {"style": opts.sound_design, "events": res.sound_events}})
+            extra={"sound_design": {"style": opts.sound_design, "events": res.sound_events},
+                   "color_grade": {"preset": opts.color_grade, "overrides": opts.grade_overrides}})
         with session_scope() as s:
             row = s.get(LongFormClip, c["pk"])
             if row:

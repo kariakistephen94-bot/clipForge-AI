@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   api, fmtBytes, fmtTime, PLATFORMS, subscribeJob, uploadForm,
-  type Candidate, type Job, type LongFormClip, type Preferences, type Project, type SettingsResponse,
+  type Candidate, type GradePreset, type Job, type LongFormClip, type Preferences, type Project, type SettingsResponse,
 } from '../api'
 import CandidateCard from './CandidateCard'
+import { GradePreview, GradeSelect, GradeSliders } from './ColorGrade'
 import LongFormCard from './LongFormCard'
 import { JobPanel, SegmentPreview, StatusBadge, Toast, Toggle, TriState } from './common'
 
@@ -67,11 +68,12 @@ export default function ProjectView({ projectId, settings }: { projectId: string
         silence_removal: p.silence_removal, aggressive_silence: p.aggressive_silence, auto_zoom: p.auto_zoom,
         broll_mode: p.broll_mode, variants: p.variants, hook_seconds: p.hook_seconds,
         sound_design: p.sound_design, sfx_volume: p.sfx_volume, sfx_playful: p.sfx_playful,
+        color_grade: p.color_grade, grade_overrides: p.grade_overrides,
       })
       setLongOpts({
         long_form_resolution: p.long_form_resolution, long_form_captions: p.long_form_captions,
         long_form_cold_open: p.long_form_cold_open, long_form_silence_removal: p.long_form_silence_removal,
-        long_form_sound_design: p.long_form_sound_design,
+        long_form_sound_design: p.long_form_sound_design, long_form_color_grade: p.long_form_color_grade,
       })
       setWhisperModel(p.whisper_model)
     }
@@ -194,6 +196,10 @@ export default function ProjectView({ projectId, settings }: { projectId: string
   const rules = project.campaign_rules
   const probe = project.source?.probe
   const isDemo = project.analysis?.provider === 'demo'
+  const grades = settings?.color_grades ?? {}
+  // frame for the look preview: just into the first clip that will be rendered, else 30 % into the source
+  const previewCand = candidates.find((c) => c.selected && !c.rejected) ?? candidates.find((c) => !c.rejected)
+  const previewT = previewCand ? previewCand.start + Math.min(1.5, previewCand.duration / 3) : (probe?.duration ?? 0) * 0.3
 
   return (
     <div className="stack" style={{ gap: 20 }}>
@@ -362,7 +368,7 @@ export default function ProjectView({ projectId, settings }: { projectId: string
           </div>
           {tab === 'long' ? (
             <LongFormPanel project={project} setProject={setProject} clips={longClips} running={running} opts={longOpts} setOpts={setLongOpts}
-              onFind={findLongForm} onRender={renderLong} onChange={updateLong}
+              grades={grades} onFind={findLongForm} onRender={renderLong} onChange={updateLong}
               onPreview={(start, end, title) => setPreview({ start, end, title })}
               onError={(msg) => setToast({ msg, kind: 'bad' })} />
           ) : candidates.length === 0 ? (
@@ -425,7 +431,18 @@ export default function ProjectView({ projectId, settings }: { projectId: string
                   </label>
                   <Toggle label="Playful sounds" hint="Comedic / crowd effects, only on clips the AI reads as funny" checked={!!opts.sfx_playful}
                     disabled={opts.sound_design === 'off'} onChange={(v) => setOpts({ ...opts, sfx_playful: v })} />
+                  <GradeSelect value={opts.color_grade ?? 'none'} grades={grades} onChange={(v) => setOpts({ ...opts, color_grade: v })} />
                 </div>
+                <details style={{ marginTop: 10 }}>
+                  <summary>Look: preview &amp; fine-tune the colour grade{Object.keys(opts.grade_overrides ?? {}).length ? ' (edited)' : ''}</summary>
+                  <div className="stack" style={{ gap: 12, marginTop: 10 }}>
+                    {project.source?.preview_url && (
+                      <GradePreview projectId={projectId} t={previewT} grade={opts.color_grade ?? 'none'} overrides={opts.grade_overrides ?? {}} />
+                    )}
+                    <GradeSliders grade={opts.color_grade ?? 'none'} overrides={opts.grade_overrides ?? {}} grades={grades}
+                      onChange={(o) => setOpts({ ...opts, grade_overrides: o })} />
+                  </div>
+                </details>
               </div>
 
               <div className="card toolbar">
@@ -480,13 +497,14 @@ export default function ProjectView({ projectId, settings }: { projectId: string
 }
 
 
-function LongFormPanel({ project, setProject, clips, running, opts, setOpts, onFind, onRender, onChange, onPreview, onError }: {
+function LongFormPanel({ project, setProject, clips, running, opts, setOpts, grades, onFind, onRender, onChange, onPreview, onError }: {
   project: Project
   setProject: (p: Project) => void
   clips: LongFormClip[]
   running: boolean
   opts: Partial<Preferences>
   setOpts: (o: Partial<Preferences>) => void
+  grades: Record<string, GradePreset>
   onFind: () => void
   onRender: (ids: string[] | null) => void
   onChange: (c: LongFormClip) => void
@@ -550,6 +568,7 @@ function LongFormPanel({ project, setProject, clips, running, opts, setOpts, onF
               <option value="punchy">Punchy (+ ~2 accents/min)</option>
             </select>
           </label>
+          <GradeSelect value={opts.long_form_color_grade ?? 'none'} grades={grades} onChange={(v) => setOpts({ ...opts, long_form_color_grade: v })} />
           <Toggle label="Cold open" hint="Start with the strongest 5–15 s line from inside the clip" checked={!!opts.long_form_cold_open} onChange={(v) => setOpts({ ...opts, long_form_cold_open: v })} />
           <Toggle label="Remove dead air" checked={!!opts.long_form_silence_removal} onChange={(v) => setOpts({ ...opts, long_form_silence_removal: v })} />
           <Toggle label="Burn-in captions" hint="Lower-third subtitles (slower); an SRT is always exported" checked={!!opts.long_form_captions} onChange={(v) => setOpts({ ...opts, long_form_captions: v })} />

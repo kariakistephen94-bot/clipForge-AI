@@ -6,6 +6,9 @@ Turn long-form videos you have permission to clip into ranked, campaign-complian
 - **Gemini** watches *and* listens to the whole video and proposes 10–20 moments with an *AI Viral Potential Score* (an estimate, not a guarantee)
 - **faster-whisper** transcribes locally with word timestamps; clip boundaries snap to natural speech
 - **OpenCV** keeps the speaker framed in 9:16; **FFmpeg** renders 1080×1920 clips with animated captions, hooks and clean audio
+- **Colour grading**: Clean, Punchy, Warm, Cool, Cinematic (teal/orange), Matte film or Black & white, plus exposure,
+  contrast, saturation, temperature, tint, shadows, highlights, fade, vignette and intensity sliders — previewed on a
+  real frame before rendering, applied under the captions so text stays crisp
 - Campaign rules are parsed into structured requirements and every clip is checked: **COMPLIANT / WARNING / FAILED**
 - **Sound design** from your own SFX library: whooshes on hook entrances and punch-ins, a riser into an impact on the
   payoff, cash / ding / shutter / typing sounds when the words call for it, small pops on emphasis words — levelled,
@@ -57,7 +60,7 @@ The key never leaves the backend.
 2. **Analyze Source** (review first) or **Generate Clips** (analyze and render the top picks automatically).
 3. Watch live progress: metadata → transcription → rule parsing → Gemini analysis → ranking.
 4. Review candidates: preview, read why each was chosen, adjust start/end (snaps to speech), pick or write a hook, reject weak ones, tick *Include in batch render*.
-5. Choose render options (caption style, variants A/B/C, framing, silence removal, zooms) and **Generate**.
+5. Choose render options (caption style, colour grade, variants A/B/C, framing, silence removal, zooms) and **Generate**.
 6. Open `READY_TO_POST` — each folder has the MP4(s), thumbnail, captions, transcript, metadata and posting copy.
 
 ### Output
@@ -137,6 +140,19 @@ only on clips the AI reads as humorous). Gemini suggests a few sound cues per cl
 edit (hook, punch-ins, payoff, B-roll, jump cuts) and from the words (money → cash register, idea → ding…), then keeps
 them spaced so a clip never turns into a soundboard. Final audio stays at −14 LUFS / −1 dBTP. Sound effects are skipped
 when campaign rules forbid added sound, and flagged when the campaign prohibits music. Use only sounds you have rights to.
+
+## Colour grading
+
+Render options → **Colour grade** picks a preset; *Look: preview & fine-tune* shows the source frame next to the graded
+one (taken from the first clip that will render) and exposes the sliders. Only the sliders you move are stored, so the
+same tweaks carry over when you switch presets; *Reset to preset* clears them. Settings → **Colour grade** sets the
+defaults for shorts and long-form separately (the fine-tuning is shared).
+
+The grade is applied to the picture after framing, punch-ins and B-roll and *before* captions and hook overlays, so
+text is never tinted or darkened by a vignette. Shorts are graded frame by frame in the compositor; long-form episodes
+get the identical look baked into a `look.cube` 3D LUT (kept next to the render, usable in any NLE) that FFmpeg applies
+in the same pass as the cut, and their thumbnail reference frames are graded to match. `metadata.json` records the
+preset and any overrides.
 
 ## Long-form clips
 

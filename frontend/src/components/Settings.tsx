@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { api, type Preferences, type SettingsResponse, type SystemInfo } from '../api'
+import { GradeSelect, GradeSliders } from './ColorGrade'
 import { Toast, Toggle } from './common'
 import SoundLibrary from './SoundLibrary'
 import { PublishConnections } from './Publish'
+import SoundFolderPicker from './SoundFolderPicker'
 
 export default function SettingsPage({ settings, system, onSaved }: {
   settings: SettingsResponse | null; system: SystemInfo | null; onSaved: () => void
@@ -153,6 +155,21 @@ export default function SettingsPage({ settings, system, onSaved }: {
         </div>
       </div>
 
+      <div className="card">
+        <div className="card-title"><h2>Colour grade</h2><span className="sub">Applied to the picture only; captions and hook text stay clean</span></div>
+        <div className="stack">
+          <div className="settings-grid">
+            <GradeSelect label="Default for shorts" value={prefs.color_grade} grades={settings.color_grades} onChange={(v) => set('color_grade', v)} />
+            <GradeSelect label="Default for long-form" value={prefs.long_form_color_grade} grades={settings.color_grades} onChange={(v) => set('long_form_color_grade', v)} />
+          </div>
+          <GradeSliders grade={prefs.color_grade} overrides={prefs.grade_overrides} grades={settings.color_grades} onChange={(o) => set('grade_overrides', o)} />
+          <div className="tiny muted">
+            Fine-tuning sits on top of whichever preset a render uses (shorts and long-form share it). Open a project's
+            <i> Render options → Look</i> to compare source and graded frames before rendering; the grade used is written to each clip's metadata.json.
+          </div>
+        </div>
+      </div>
+
       <div className="grid-2">
         <div className="card">
           <div className="card-title"><h2>Editing</h2></div>
@@ -247,12 +264,10 @@ export default function SettingsPage({ settings, system, onSaved }: {
         <div className="card">
           <div className="card-title"><h2>Sound design</h2><span className="sub">Effects from your own sound library</span></div>
           <div className="stack">
-            <label className="field">
-              <span>Sound library folder</span>
-              <input type="text" value={prefs.sfx_library_path} placeholder="/Users/you/Downloads/sound library"
-                onChange={(e) => set('sfx_library_path', e.target.value)} />
-              <span className="tiny muted">Every audio file in this folder (and in workspace/sfx/) is analysed and sorted into categories. Use only sounds you have rights to.</span>
-            </label>
+            <SoundFolderPicker
+              value={prefs.sfx_library_path}
+              onChange={(val) => set('sfx_library_path', val)}
+            />
             <label className="field">
               <span>Default style for shorts</span>
               <select value={prefs.sound_design} onChange={(e) => set('sound_design', e.target.value as Preferences['sound_design'])}>

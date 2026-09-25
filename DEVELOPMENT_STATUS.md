@@ -64,8 +64,16 @@ _Last updated: 2026-09-19_
 - [ ] **Not built on purpose:** unattended/scheduled auto-posting. Every publish is a confirmed click.
 - [ ] Untested against the live APIs — needs your developer apps and account connection
 
+### Phase 5 — colour grading (2026-09-23)
+- [x] `services/color_grade.py`: 8 presets (Off, Clean, Punchy, Warm, Cool, Cinematic teal/orange, Matte film, Black & white) and 10 clamped fine-tuning fields; per-frame path is LUT + saturation matrix + luma-indexed split-tone LUTs + cached 8-bit vignette (≈4–8 ms/frame at 1080×1920)
+- [x] Shorts: grade applied in the compositor after framing/punch-ins/B-roll and before captions and hook overlays, so text stays clean
+- [x] Long-form: identical look baked into a 33³ `look.cube` from the same code path, applied by FFmpeg `lut3d` in the cut pass (+ `vignette` filter); thumbnail reference frames graded to match
+- [x] `GET /projects/{id}/grade-preview` returns one graded source frame; UI shows source vs graded side by side with live sliders (debounced), per-render preset in Render options and the long-form panel, defaults + shared fine-tuning in Settings → Colour grade
+- [x] Grade recorded in `metadata.json` (`color_grade.preset` / `overrides`) and in render notes
+- [x] Tests: presets, clamping, identity/mono/exposure/white balance/intensity, vignette edges only, split-tone direction, .cube lattice order and range, FFmpeg filter quoting, cut-command placement, options/preferences validation
+
 ## CURRENT
-- Quality gates: pytest 171/171, ruff clean, mypy clean, `tsc -b && vite build` clean (oxlint: 6 style warnings, all the fetch-in-effect pattern)
+- Quality gates: pytest 206/206, ruff clean, mypy clean, `tsc -b && vite build` clean (oxlint: 6 style warnings, all the fetch-in-effect pattern)
 - API-level verification of the built dashboard (SPA serving, range requests for video seeking, export URLs, upload/URL validation)
 - Interactive click-through of the dashboard in a real browser is still to do (run `./start.sh`)
 

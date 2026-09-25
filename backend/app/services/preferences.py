@@ -41,6 +41,10 @@ class Preferences(BaseModel):
     sfx_volume: float = Field(1.0, ge=0.0, le=2.0)
     sfx_playful: bool = False  # comedic / crowd sounds, only on clips the AI reads as humorous
     sfx_library_path: str = ""
+    # colour grade (preset name from services/color_grade.PRESETS + fine-tuning shared by shorts and long-form)
+    color_grade: str = "none"
+    grade_overrides: dict[str, Any] = Field(default_factory=dict)
+    long_form_color_grade: str = "none"
     # long-form (16:9) clips
     long_form_min_duration: float = Field(300, ge=60, le=3600)
     long_form_max_duration: float = Field(1200, ge=120, le=5400)
@@ -50,6 +54,20 @@ class Preferences(BaseModel):
     long_form_cold_open: bool = True
     long_form_silence_removal: bool = True
     long_form_sound_design: Literal["off", "subtle", "balanced", "punchy"] = "balanced"
+
+    @field_validator("color_grade", "long_form_color_grade")
+    @classmethod
+    def _grade(cls, v: str) -> str:
+        from .color_grade import PRESETS
+
+        return v if v in PRESETS else "none"
+
+    @field_validator("grade_overrides")
+    @classmethod
+    def _grade_overrides(cls, v: dict[str, Any]) -> dict[str, Any]:
+        from .color_grade import EDITABLE_FIELDS
+
+        return {k: val for k, val in (v or {}).items() if k in EDITABLE_FIELDS}
 
     @field_validator("sfx_library_path")
     @classmethod

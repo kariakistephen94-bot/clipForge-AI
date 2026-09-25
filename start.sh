@@ -5,6 +5,7 @@
 #   ./start.sh --check  only verify dependencies
 set -euo pipefail
 
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 MODE="${1:-}"

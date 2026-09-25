@@ -225,6 +225,7 @@ def run_render(project_id: str, tracker: JobTracker, candidate_pks: list[str] | 
                        "variants": sorted(r.variants), "keep_segments": r.keep_segments, "removed_silence": r.removed_silence,
                        "framing": r.framing, "zoom_events": r.zoom_events, "broll_used": r.broll_used,
                        "sound_design": {"style": opts.sound_design, "events": r.sound_events},
+                       "color_grade": {"preset": r.color_grade or "none", "overrides": opts.grade_overrides},
                        "captions_burned_in": r.captions_on, "notes": r.notes, "compliance_report": reports[pk]},
             )
             txt = posting_copy_text(copy, hook, alts, P["campaign"])

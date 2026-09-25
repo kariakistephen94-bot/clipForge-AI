@@ -28,10 +28,12 @@ from ..schemas.ai import CampaignRules
 from ..utils.timeutil import fmt_chapter
 from . import sfx_library
 from .captions import PRESETS, CaptionRenderer, chunks_to_srt, group_words, wrap_text
+from .color_grade import PreparedGrade, ffmpeg_vf, grade_from, prepare, write_cube
 from .ffmpeg import (
     AudioOptions,
     FFmpegError,
     build_decode_cmd,
+    build_frame_cmd,
     build_silencedetect_cmd,
     even,
     ffmpeg_bin,
@@ -74,6 +76,8 @@ class LongRenderOptions:
     normalize_audio: bool = True
     crf: int = 19
     preset: str = "veryfast"
+    color_grade: str = "none"
+    grade_overrides: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_prefs(cls, p: dict[str, Any]) -> LongRenderOptions:
@@ -84,7 +88,9 @@ class LongRenderOptions:
                    denoise=bool(p.get("denoise", True)), normalize_audio=bool(p.get("normalize_audio", True)),
                    crf=int(max(14, min(30, int(p.get("crf", 19))))),
                    preset=p.get("encoder_preset", "veryfast") if p.get("encoder_preset") in
-                   ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium") else "veryfast")
+                   ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium") else "veryfast",
+                   color_grade=str(p.get("long_form_color_grade") or "none"),
+                   grade_overrides=dict(p.get("grade_overrides") or {}))
 
     @property
     def height(self) -> int:
@@ -136,15 +142,18 @@ def select_expr(segments: list[tuple[float, float]], offset: float) -> str:
 
 def build_long_cut_cmd(src: str | Path, segments: list[tuple[float, float]], out_video: str | Path,
                        out_audio: str | Path, *, fps: int, height: int, has_audio: bool, audio: AudioOptions,
-                       crf: int, preset: str, ffmpeg: str = "ffmpeg") -> list[str]:
-    """One body (ascending segments) -> final-quality H.264 (no audio) + processed WAV."""
+                       crf: int, preset: str, grade_vf: str = "", ffmpeg: str = "ffmpeg") -> list[str]:
+    """One body (ascending segments) -> final-quality H.264 (no audio) + processed WAV.
+
+    ``grade_vf`` (from ``color_grade.ffmpeg_vf``) is applied after scaling, before the pixel-format conversion."""
     if not segments:
         raise ValueError("no segments")
     win_start, win_end = segments[0][0], segments[-1][1]
     total = sum(b - a for a, b in segments)
     sel = select_expr(segments, win_start)
+    grade = f"{grade_vf}," if grade_vf else ""
     f = [f"[0:v:0]fps={fps},select='{sel}',setpts=N/FRAME_RATE/TB,scale=-2:{even(height)}:flags=lanczos,"
-         f"format=yuv420p[vout]"]
+         f"{grade}format=yuv420p[vout]"]
     if has_audio:
         f.append(f"[0:a:0]aselect='{sel}',asetpts=N/SR/TB,{voice_filter_chain(audio)},alimiter=limit=0.89:level=0[aout]")
     else:
@@ -226,11 +235,10 @@ def chapters_text(chapters: list[dict[str, Any]]) -> str:
 # --------------------------------------------------------------------------- thumbnails
 
 
-def _frame_at(src: str, t: float, width: int = 1280) -> np.ndarray | None:
+def frame_at(src: str, t: float, width: int = 1280) -> np.ndarray | None:
+    """Decode one BGR frame at ``t`` seconds, ``width`` px wide; None if FFmpeg cannot produce it."""
     try:
-        out = subprocess.run([ffmpeg_bin(), "-v", "error", "-ss", f"{max(0.0, t):.3f}", "-i", src, "-frames:v", "1",
-                              "-vf", f"scale={width}:-2", "-f", "image2pipe", "-vcodec", "png", "-"],
-                             capture_output=True, timeout=60)
+        out = subprocess.run(build_frame_cmd(src, t, width, ffmpeg=ffmpeg_bin()), capture_output=True, timeout=60)
     except (OSError, subprocess.SubprocessError):
         return None
     if out.returncode != 0 or not out.stdout:
@@ -275,7 +283,7 @@ def pick_thumbnail_frame(src: str, around: float, lo: float, hi: float) -> tuple
     best: tuple[float, np.ndarray | None, tuple[float, float] | None] = (-1.0, None, None)
     for dt in (0.0, -1.2, 1.2, -2.5, 2.5, -4.0, 4.0):
         t = min(hi - 0.5, max(lo + 0.2, around + dt))
-        img = _frame_at(src, t)
+        img = frame_at(src, t)
         if img is None:
             continue
         sc, centre = _face_score(img, detector)
@@ -359,7 +367,9 @@ def draw_thumbnail_text(img_bgr: np.ndarray, text: str, face_x: float | None) ->
     return cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
 
 
-def make_thumbnails(src: str, lo: float, hi: float, concepts: list[dict[str, Any]], wd: Path) -> tuple[list[str], list[str]]:
+def make_thumbnails(src: str, lo: float, hi: float, concepts: list[dict[str, Any]], wd: Path,
+                    grade: PreparedGrade | None = None) -> tuple[list[str], list[str]]:
+    """``grade`` is the episode's colour grade, so the reference frames match the rendered video."""
     frames, drafts = [], []
     concepts = concepts or [{"text_overlay": "", "frame_timestamp": None}]
     span = hi - lo
@@ -372,7 +382,7 @@ def make_thumbnails(src: str, lo: float, hi: float, concepts: list[dict[str, Any
             continue
         zoom, face_at = thumb_layout(centre)
         cropped, fx = cover_crop(img, 1280, 720, centre, zoom, face_at)
-        base = enhance(cropped)
+        base = enhance(grade.apply(cropped) if grade is not None else cropped)
         fpath = wd / f"thumbnail_frame_{tag}.jpg"
         cv2.imwrite(str(fpath), base, [cv2.IMWRITE_JPEG_QUALITY, 92])
         frames.append(str(fpath))
@@ -445,6 +455,12 @@ def render_long_clip(inp: LongRenderInput, opts: LongRenderOptions, progress: Pr
     ff = ffmpeg_bin()
     fps = 60 if inp.src_fps >= 50 else 30
     height = min(opts.height, even(inp.src_height)) if inp.src_height else opts.height
+    grade = grade_from(opts.color_grade, opts.grade_overrides)
+    grading = prepare(grade)
+    grade_vf = ""
+    if grading is not None:
+        grade_vf = ffmpeg_vf(grade, write_cube(grade, wd / "look.cube"))
+        notes.append(f"Colour grade: {grade.describe(opts.grade_overrides)}.")
 
     # ---- 1. segments -----------------------------------------------------------------------
     clip_words = words_in_range(inp.words, inp.start, inp.end)
@@ -482,7 +498,7 @@ def render_long_clip(inp: LongRenderInput, opts: LongRenderOptions, progress: Pr
         seg_dur = total_duration(segs)
         base_f = 0.03 + 0.6 * done / max(duration, 1)
         run_ffmpeg(build_long_cut_cmd(inp.source_path, segs, v, a_, fps=fps, height=height, has_audio=inp.has_audio,
-                                      audio=aopts, crf=opts.crf, preset=opts.preset, ffmpeg=ff),
+                                      audio=aopts, crf=opts.crf, preset=opts.preset, grade_vf=grade_vf, ffmpeg=ff),
                    duration=seg_dur, timeout=6 * 3600, on_progress=_scaled(prog, base_f, 0.6 * seg_dur / max(duration, 1)))
         done += seg_dur
         parts_v.append(v)
@@ -536,7 +552,7 @@ def render_long_clip(inp: LongRenderInput, opts: LongRenderOptions, progress: Pr
     run_ffmpeg(build_mux_cmd(video, audio, meta_path if chapters else None, final, ffmpeg=ff), timeout=3600)
 
     prog(0.93, "Thumbnails")
-    frames, drafts = make_thumbnails(inp.source_path, inp.start, inp.end, inp.thumbnails, wd)
+    frames, drafts = make_thumbnails(inp.source_path, inp.start, inp.end, inp.thumbnails, wd, grade=grading)
     if not frames:
         notes.append("Could not extract thumbnail frames.")
     prog(1.0, "Rendered")

@@ -99,8 +99,9 @@ Database tables: `projects`, `source_videos`, `transcripts`, `gemini_files`, `ai
    active-speaker `track` with hard cuts between speakers (min 2.5 s hold), `split` (only when rules explicitly allow it
    and the user enabled it), `wide` (fit + blurred fill), or `center` fallback. Dead-zone camera (11 % of crop width,
    0.5 s persistence) with eased 0.35–0.9 s moves; never interpolates across a cut.
-3. **Composite & encode**: frames are decoded by FFmpeg, cropped/zoomed/composited in NumPy/OpenCV, captions and B-roll
-   are applied, and raw frames are piped into FFmpeg (libx264 High, yuv420p, BT.709, AAC 48 kHz, faststart) → 1080×1920.
+3. **Composite & encode**: frames are decoded by FFmpeg, cropped/zoomed/composited in NumPy/OpenCV, B-roll is swapped
+   in, the colour grade is applied, captions are drawn on top, and raw frames are piped into FFmpeg (libx264 High,
+   yuv420p, BT.709, AAC 48 kHz, faststart) → 1080×1920.
 4. **Variants**: the captions-only render is Variant C. Variants A (recommended hook) and B (alternative hook) are made by
    overlaying a transparent hook PNG on C with FFmpeg — no second compositing pass.
 5. **Thumbnail** from the primary variant.
@@ -116,6 +117,15 @@ Punch-ins (`services/zoom.py`): AI zoom points > questions > emphasis words; at 
 
 Silence (`services/silence.py`): gaps between words ≥0.85 s (0.45 s aggressive) are shortened to a natural 0.38 s pause,
 only where FFmpeg `silencedetect` confirms silence, and pauses after questions/before emphasised words are kept unless aggressive.
+
+Colour grade (`services/color_grade.py`): a `Grade` (preset + clamped overrides: exposure, contrast, saturation,
+temperature, tint, shadows, highlights, fade, vignette, intensity; presets may add luma-driven split toning) is compiled
+once per render into a 256-entry per-channel LUT (`cv2.LUT`), a luma-preserving 3×3 saturation matrix (`cv2.transform`),
+split-tone add/subtract LUTs indexed by luma, and a cached 8-bit vignette mask — roughly 4–8 ms per 1080×1920 frame.
+It runs on the composed frame *before* captions so text and the vignette never interact. Long-form is graded by FFmpeg:
+the same `apply()` is run over an identity lattice to write a 33³ `.cube` LUT (`lut3d=…:interp=tetrahedral`) and the
+vignette maps to FFmpeg's `vignette=angle=acos((1-v)^¼)`; long-form thumbnail frames are graded with the NumPy path so
+they match. `GET /api/projects/{id}/grade-preview?t=&grade=&<field>=` returns one graded source frame for the UI.
 
 ## Sound design (`services/sfx_library.py`, `services/sound_design.py`)
 
@@ -155,8 +165,9 @@ only where FFmpeg `silencedetect` confirms silence, and pauses after questions/b
 * **Sound**: `long_form_events` marks the cold open and chapter turns, and at Balanced/Punchy adds ~1–2 keyword
   accents per minute (money, idea, mistake …), spaced and capped per category.
 * **Render**: teaser and body are cut separately (`select`/`aselect` expressions, so hundreds of silence cuts need no
-  buffering) with identical encoder settings, concatenated without re-encoding, optional caption burn-in, subtle
-  sound design, then muxed with ffmetadata chapters. Duration/platform campaign rules (written for shorts) are not
+  buffering) with identical encoder settings and the colour grade applied in the same pass (`lut3d` from `look.cube`
+  + `vignette`), concatenated without re-encoding, optional caption burn-in, subtle sound design, then muxed with
+  ffmetadata chapters. Duration/platform campaign rules (written for shorts) are not
   applied to long-form; content rules are.
 
 ## Campaign compliance (`services/compliance.py`)

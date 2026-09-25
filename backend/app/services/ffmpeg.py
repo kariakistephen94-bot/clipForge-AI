@@ -308,6 +308,12 @@ def build_thumbnail_cmd(video: str | Path, t: float, out: str | Path, ffmpeg: st
             "-frames:v", "1", "-q:v", "3", str(out)]
 
 
+def build_frame_cmd(video: str | Path, t: float, width: int = 1280, ffmpeg: str = "ffmpeg") -> list[str]:
+    """One frame at ``t`` as PNG on stdout (thumbnail picking, grade previews)."""
+    return [ffmpeg, "-v", "error", "-ss", f"{max(0.0, t):.3f}", "-i", str(video), "-frames:v", "1",
+            "-vf", f"scale={width}:-2", "-f", "image2pipe", "-vcodec", "png", "-"]
+
+
 def build_silencedetect_cmd(src: str | Path, start: float, end: float, noise_db: float = -35, min_d: float = 0.3,
                             ffmpeg: str = "ffmpeg") -> list[str]:
     return [ffmpeg, "-hide_banner", "-nostats", "-ss", f"{start:.3f}", "-to", f"{end:.3f}", "-i", str(src),

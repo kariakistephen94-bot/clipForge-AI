@@ -12,8 +12,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import cv2
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sse_starlette import EventSourceResponse
@@ -35,10 +36,14 @@ from ..schemas.ai import CampaignRules, Penalty, ViralCandidate
 from ..services import broll as broll_mod
 from ..services import sfx_library
 from ..services.captions import PRESETS
+from ..services.color_grade import EDITABLE_FIELDS as GRADE_FIELDS
+from ..services.color_grade import PRESETS as GRADE_PRESETS
+from ..services.color_grade import grade_from, prepare
 from ..services.compliance import ClipFacts, evaluate_compliance
 from ..services.ffmpeg import FFmpegMissingError, ffmpeg_bin, ffmpeg_filters, ffprobe_bin
 from ..services.fonts import list_fonts, resolve_font
 from ..services.ingest import LINK_LABELS, IngestError, drive_folder_id, list_drive_folder, save_upload, validate_source_link
+from ..services.longform_render import frame_at
 from ..services.preferences import get_preferences, update_preferences
 from ..services.probe import InvalidMediaError, probe_video
 from ..services.transcribe import WHISPER_MODELS, detect_device, flatten_words
@@ -118,6 +123,7 @@ def get_settings_api() -> dict[str, Any]:
         "gemini": {"configured": s.gemini_configured, "model": s.model_name},
         "whisper_models": list(WHISPER_MODELS),
         "caption_styles": {k: v.to_public() for k, v in PRESETS.items()},
+        "color_grades": {k: v.to_public() for k, v in GRADE_PRESETS.items()},
         "fonts": sorted(list_fonts().keys())[:400],
         "music_files": sorted(p.name for p in music_dir().iterdir() if p.suffix.lower() in (".mp3", ".wav", ".m4a", ".aac", ".flac")),
         "broll_files": [Path(i.path).name for i in broll_mod.index_broll()],
@@ -146,6 +152,68 @@ def put_settings(body: dict[str, Any]) -> dict[str, Any]:
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     return {"preferences": prefs.model_dump()}
+
+
+@router.post("/utils/choose-folder")
+def choose_folder_dialog() -> dict[str, Any]:
+    system = platform.system()
+    if system == "Darwin":
+        try:
+            script = 'POSIX path of (choose folder with prompt "Select your sound library folder:")'
+            out = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=120)
+            if out.returncode == 0 and out.stdout.strip():
+                p = out.stdout.strip()
+                if p.endswith("/"):
+                    p = p[:-1]
+                return {"path": p, "canceled": False}
+            return {"path": None, "canceled": True}
+        except Exception as e:
+            log.warning("osascript choose folder failed: %s", e)
+            return {"path": None, "canceled": True, "error": str(e)}
+    elif system == "Windows":
+        try:
+            ps_script = (
+                "Add-Type -AssemblyName System.Windows.Forms; "
+                "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                "$dialog.Description = 'Select your sound library folder'; "
+                "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.SelectedPath }"
+            )
+            out = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True, timeout=120)
+            if out.returncode == 0 and out.stdout.strip():
+                return {"path": out.stdout.strip(), "canceled": False}
+            return {"path": None, "canceled": True}
+        except Exception as e:
+            log.warning("powershell choose folder failed: %s", e)
+            return {"path": None, "canceled": True, "error": str(e)}
+    elif shutil.which("zenity"):
+        try:
+            out = subprocess.run(["zenity", "--file-selection", "--directory", "--title=Select your sound library folder"], capture_output=True, text=True, timeout=120)
+            if out.returncode == 0 and out.stdout.strip():
+                return {"path": out.stdout.strip(), "canceled": False}
+            return {"path": None, "canceled": True}
+        except Exception as e:
+            log.warning("zenity choose folder failed: %s", e)
+            return {"path": None, "canceled": True, "error": str(e)}
+
+    return {"path": None, "unsupported": True, "canceled": True}
+
+
+@router.post("/utils/open-folder")
+def open_system_folder(body: dict[str, str]) -> dict[str, Any]:
+    path = body.get("path")
+    if not path:
+        raise HTTPException(400, "Missing path")
+    target = Path(path).expanduser()
+    if not target.exists():
+        raise HTTPException(404, "Folder does not exist")
+    system = platform.system()
+    cmd = ["open", str(target)] if system == "Darwin" else ["explorer", str(target)] if system == "Windows" else ["xdg-open", str(target)]
+    try:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as e:
+        raise HTTPException(500, f"Could not open folder: {e}") from e
+    return {"ok": True}
+
 
 
 # --------------------------------------------------------------------------- projects
@@ -614,6 +682,32 @@ def media_source(project_id: str, s: Session = Depends(get_db)):
             mt = {".mp4": "video/mp4", ".m4v": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm"}.get(ext, "video/mp4")
             return FileResponse(cand, media_type=mt)
     raise HTTPException(404, "Source file not available yet")
+
+
+@router.get("/projects/{project_id}/grade-preview")
+def grade_preview(project_id: str, request: Request, t: float = 0.0, grade: str = "none",
+                  s: Session = Depends(get_db)) -> Response:
+    """One source frame at ``t`` seconds with a colour grade applied, as JPEG. Fine-tuning values are passed as
+    query parameters named after ``color_grade.EDITABLE_FIELDS`` (e.g. ``?grade=punchy&contrast=0.3``)."""
+    p = _project(s, project_id)
+    if p.source is None or not p.source.probe:
+        raise HTTPException(404, "No source")
+    src = next((c for c in (p.source.proxy_path, p.source.stored_path) if c and Path(c).exists()), None)
+    if src is None:
+        raise HTTPException(404, "Source file not available yet")
+    duration = float(p.source.probe.get("duration") or 0)
+    t = max(0.0, min(t, max(0.0, duration - 0.5)))
+    img = frame_at(src, t, width=720)
+    if img is None:
+        raise HTTPException(500, "Could not decode a frame at that time")
+    overrides = {k: v for k, v in request.query_params.items() if k in GRADE_FIELDS}
+    grading = prepare(grade_from(grade, overrides))
+    if grading is not None:
+        img = grading.apply(img)
+    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 88])
+    if not ok:
+        raise HTTPException(500, "Could not encode the preview")
+    return Response(content=buf.tobytes(), media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @router.get("/projects/{project_id}/files/{rel_path:path}")

@@ -22,6 +22,8 @@ from ..schemas.ai import CampaignRules
 from . import broll as broll_mod
 from . import sfx_library
 from .captions import CaptionRenderer, chunks_to_srt, group_words, render_hook_png, style_from
+from .color_grade import PRESETS as GRADE_PRESETS
+from .color_grade import grade_from, prepare
 from .ffmpeg import (
     AudioOptions,
     EncodeSettings,
@@ -75,12 +77,17 @@ class RenderOptions:
     sound_design: str = "balanced"  # off | subtle | balanced | punchy
     sfx_volume: float = 1.0
     sfx_playful: bool = False
+    color_grade: str = "none"  # a preset name from color_grade.PRESETS
+    grade_overrides: dict[str, Any] = field(default_factory=dict)  # fine-tuning on top of the preset
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> RenderOptions:
         names = {f.name for f in fields(cls)}
         opts = cls(**{k: v for k, v in (d or {}).items() if k in names})
         opts.variants = [v for v in opts.variants if v in ("A", "B", "C")] or ["A"]
+        if opts.color_grade not in GRADE_PRESETS:
+            opts.color_grade = "none"
+        opts.grade_overrides = dict(opts.grade_overrides or {})
         opts.output_fps = 60 if int(opts.output_fps) >= 50 else 30
         if opts.output_resolution not in ("1080x1920", "720x1280"):
             opts.output_resolution = "1080x1920"
@@ -137,6 +144,7 @@ class RenderResult:
     thumbnail: str
     notes: list[str]
     sound_events: list[dict[str, Any]] = field(default_factory=list)
+    color_grade: str = ""  # preset name when a grade was applied, else ""
 
 
 # --------------------------------------------------------------------------- compositing helpers
@@ -328,6 +336,12 @@ def render_clip(inp: RenderInput, opts: RenderOptions, progress: ProgressFn | No
             elif pts and not broll_events:
                 notes.append("No local B-roll matched the AI suggestions.")
 
+    # ---- 4a. colour grade (applied to the composed frame; captions and hooks stay ungraded) --------
+    grade = grade_from(opts.color_grade, opts.grade_overrides)
+    grading = prepare(grade)
+    if grading is not None:
+        notes.append(f"Colour grade: {grade.describe(opts.grade_overrides)}.")
+
     # ---- 4b. sound design ------------------------------------------------------------------
     hooks = [h for h in inp.hooks if h and h.strip()]
     hook_variants = bool(hooks) and any(v in opts.variants for v in ("A", "B"))
@@ -371,6 +385,8 @@ def render_clip(inp: RenderInput, opts: RenderOptions, progress: ProgressFn | No
                 b = player.frame_at(t, out_w, out_h) if broll_events else None
                 if b is not None:
                     out = np.ascontiguousarray(b)
+                if grading is not None:
+                    out = grading.apply(out)
                 if renderer is not None:
                     renderer.overlay(out, t)
                 encp.stdin.write(out.tobytes())
@@ -429,6 +445,7 @@ def render_clip(inp: RenderInput, opts: RenderOptions, progress: ProgressFn | No
         clip_text=" ".join(w["word"] for w in clip_words),
         zoom_events=[{"start": z.start, "end": z.end, "scale": z.scale, "kind": z.kind} for z in zooms],
         thumbnail=str(thumb) if thumb.exists() else "", notes=notes, sound_events=sound_events,
+        color_grade=grade.name if grading is not None else "",
     )
 
 

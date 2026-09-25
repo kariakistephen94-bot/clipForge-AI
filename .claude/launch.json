@@ -2,19 +2,35 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "clipforge-8766",
+      "runtimeExecutable": "/Users/kariakistephen/Documents/clipForge-AI/backend/.venv/bin/python",
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "app.main:app",
+        "--app-dir",
+        "/Users/kariakistephen/Documents/clipForge-AI/backend",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8766"
+      ],
+      "port": 8766
+    },
+    {
       "name": "clipforge-attach",
       "url": "http://127.0.0.1:8765",
       "port": 8765
     },
     {
       "name": "clipforge",
-      "runtimeExecutable": "/Users/mac/Documents/ClipForge-AI/backend/.venv/bin/python",
+      "runtimeExecutable": "/Users/kariakistephen/Documents/clipForge-AI/backend/.venv/bin/python",
       "runtimeArgs": [
         "-m",
         "uvicorn",
         "app.main:app",
         "--app-dir",
-        "/Users/mac/Documents/ClipForge-AI/backend",
+        "/Users/kariakistephen/Documents/clipForge-AI/backend",
         "--host",
         "127.0.0.1",
         "--port",
@@ -27,7 +43,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "--prefix",
-        "/Users/mac/Documents/ClipForge-AI/frontend",
+        "/Users/kariakistephen/Documents/clipForge-AI/frontend",
         "run",
         "dev"
       ],
@@ -35,11 +51,11 @@
     },
     {
       "name": "caption-lab",
-      "runtimeExecutable": "/Users/mac/Documents/ClipForge-AI/lab/caption-lab/node_modules/.bin/vite",
+      "runtimeExecutable": "/Users/kariakistephen/Documents/clipForge-AI/lab/caption-lab/node_modules/.bin/vite",
       "runtimeArgs": [
         "--config",
-        "/Users/mac/Documents/ClipForge-AI/lab/caption-lab/vite.config.ts",
-        "/Users/mac/Documents/ClipForge-AI/lab/caption-lab",
+        "/Users/kariakistephen/Documents/clipForge-AI/lab/caption-lab/vite.config.ts",
+        "/Users/kariakistephen/Documents/clipForge-AI/lab/caption-lab",
         "--port",
         "5180",
         "--host",

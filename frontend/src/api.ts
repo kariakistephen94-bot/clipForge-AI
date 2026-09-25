@@ -334,6 +334,9 @@ export interface Preferences {
   sfx_volume: number
   sfx_playful: boolean
   sfx_library_path: string
+  color_grade: string
+  grade_overrides: Record<string, number>
+  long_form_color_grade: string
   long_form_min_duration: number
   long_form_max_duration: number
   long_form_max_clips: number
@@ -344,11 +347,28 @@ export interface Preferences {
   long_form_sound_design: 'off' | 'subtle' | 'balanced' | 'punchy'
 }
 
+export interface GradePreset {
+  name: string
+  label: string
+  description: string
+  exposure: number
+  contrast: number
+  saturation: number
+  temperature: number
+  tint: number
+  shadows: number
+  highlights: number
+  fade: number
+  vignette: number
+  intensity: number
+}
+
 export interface SettingsResponse {
   preferences: Preferences
   gemini: { configured: boolean; model: string }
   whisper_models: string[]
   caption_styles: Record<string, Record<string, unknown>>
+  color_grades: Record<string, GradePreset>
   fonts: string[]
   music_files: string[]
   broll_files: string[]
