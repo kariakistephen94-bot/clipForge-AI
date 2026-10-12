@@ -16,6 +16,7 @@ from . import __version__
 from .ai.provider import AIProviderError
 from .api.publish_routes import router as publish_router
 from .api.routes import router
+from .api.pov_routes import router as pov_router
 from .config import FRONTEND_DIST, get_settings
 from .db import init_db
 from .logging_setup import setup_logging
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(router)
     app.include_router(publish_router)
+    app.include_router(pov_router)
     app.router.on_startup.append(start_scheduler)
     app.router.on_startup.append(_warm_sfx_index)
 

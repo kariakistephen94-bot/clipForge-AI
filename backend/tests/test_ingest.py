@@ -256,3 +256,101 @@ def test_drive_quota_page_gets_its_own_message(tmp_path):
     page = _FakeServer(b"<html>Too many users have viewed or downloaded this file recently.</html>", ctype="text/html")
     with pytest.raises(IngestError, match="download limit"):
         download_shared_file("https://drive.google.com/file/d/1AbCdEfGhIjKlMn/view", tmp_path, 10**9, opener=page)
+
+
+def test_proxy_preference_validation():
+    from app.services.preferences import Preferences
+
+    # Valid proxies
+    assert Preferences(proxy_url="http://127.0.0.1:8080").proxy_url == "http://127.0.0.1:8080"
+    assert Preferences(proxy_url="socks5://user:pass@1.2.3.4:1080").proxy_url == "socks5://user:pass@1.2.3.4:1080"
+    assert Preferences(proxy_url="127.0.0.1:8080").proxy_url == "http://127.0.0.1:8080"
+    assert Preferences(proxy_url="").proxy_url == ""
+
+    # Invalid proxy scheme
+    with pytest.raises(ValueError, match="Unsupported proxy protocol"):
+        Preferences(proxy_url="ftp://127.0.0.1:21")
+
+
+def test_update_preferences_clears_youtube_block(monkeypatch):
+    from app.pipeline import youtube_retry
+    from app.services.preferences import update_preferences
+
+    cleared = []
+    monkeypatch.setattr(youtube_retry, "clear_block", lambda: cleared.append(True))
+    update_preferences({"proxy_url": "http://proxy.example.com:8080"})
+    assert cleared == [True]
+
+
+def test_download_youtube_passes_proxy(monkeypatch, tmp_path):
+    import yt_dlp
+
+    from app.services.ingest import download_youtube
+
+    passed_opts = {}
+
+    class FakeYDL:
+        def __init__(self, opts):
+            passed_opts.update(opts)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def extract_info(self, url, download=False):
+            return {"title": "Test Video", "availability": "public", "duration": 60, "requested_formats": []}
+
+        def download(self, urls):
+            (tmp_path / "original.mp4").write_bytes(b"\x00" * 1024)
+
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYDL)
+    download_youtube("https://www.youtube.com/watch?v=TkKECI_G6NY", tmp_path, proxy="http://proxy.test:8080")
+    assert passed_opts.get("proxy") == "http://proxy.test:8080"
+
+
+def test_api_test_proxy_endpoint(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    client = TestClient(app)
+
+    # Empty proxy url
+    r = client.post("/api/utils/test-proxy", json={"proxy_url": ""})
+    assert r.status_code == 400
+
+    # Invalid protocol
+    r = client.post("/api/utils/test-proxy", json={"proxy_url": "ftp://localhost:21"})
+    assert r.status_code == 400
+
+    # Mocked successful check
+    class MockResp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"ip": "198.51.100.42"}
+
+    class MockHttpxClient:
+        def __init__(self, **kw):
+            self.kw = kw
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def get(self, url):
+            return MockResp()
+
+    import httpx
+    monkeypatch.setattr(httpx, "Client", MockHttpxClient)
+
+    r = client.post("/api/utils/test-proxy", json={"proxy_url": "http://127.0.0.1:8080"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["ip"] == "198.51.100.42"

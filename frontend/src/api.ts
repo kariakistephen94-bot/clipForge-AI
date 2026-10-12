@@ -345,6 +345,7 @@ export interface Preferences {
   long_form_cold_open: boolean
   long_form_silence_removal: boolean
   long_form_sound_design: 'off' | 'subtle' | 'balanced' | 'punchy'
+  proxy_url: string
 }
 
 export interface GradePreset {

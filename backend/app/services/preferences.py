@@ -54,6 +54,21 @@ class Preferences(BaseModel):
     long_form_cold_open: bool = True
     long_form_silence_removal: bool = True
     long_form_sound_design: Literal["off", "subtle", "balanced", "punchy"] = "balanced"
+    # Network / proxy for YouTube downloads (HTTP/HTTPS/SOCKS5)
+    proxy_url: str = ""
+
+    @field_validator("proxy_url")
+    @classmethod
+    def _proxy(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            return ""
+        if "://" not in v:
+            v = f"http://{v}"
+        proto = v.split("://", 1)[0].lower()
+        if proto not in ("http", "https", "socks4", "socks5", "socks5h"):
+            raise ValueError(f"Unsupported proxy protocol: '{proto}'. Use http://, https://, or socks5://")
+        return v
 
     @field_validator("color_grade", "long_form_color_grade")
     @classmethod
@@ -118,6 +133,7 @@ def update_preferences(changes: dict[str, Any]) -> Preferences:
 
         if not Path(lib).expanduser().is_dir():
             raise ValueError(f"Sound library folder not found: {lib}")
+    old_proxy = get_preferences().proxy_url
     current = get_preferences().model_dump()
     current.update({k: v for k, v in changes.items() if k in Preferences.model_fields})
     prefs = Preferences.model_validate(current)
@@ -125,6 +141,11 @@ def update_preferences(changes: dict[str, Any]) -> Preferences:
         raise ValueError("Default minimum duration must not exceed the maximum.")
     if prefs.long_form_min_duration > prefs.long_form_max_duration:
         raise ValueError("Long-form minimum length must not exceed the maximum.")
+    if prefs.proxy_url != old_proxy:
+        # A new proxy means a different outgoing IP; clear any old network-wide block
+        from ..pipeline import youtube_retry
+
+        youtube_retry.clear_block()
     with session_scope() as s:
         s.merge(Preference(key=KEY, value=prefs.model_dump()))
     return prefs

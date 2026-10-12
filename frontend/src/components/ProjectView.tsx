@@ -33,6 +33,8 @@ export default function ProjectView({ projectId, settings }: { projectId: string
   const [permission, setPermission] = useState(false)
   const [link, setLink] = useState('')
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const [batchUploading, setBatchUploading] = useState(false)
+  const [uploadStatus, setUploadStatus] = useState<Record<string, 'pending' | 'uploading' | 'done' | 'error'>>({})
 
   const load = useCallback(async () => {
     try {
@@ -96,8 +98,78 @@ export default function ProjectView({ projectId, settings }: { projectId: string
 
   const selectedCount = candidates.filter((c) => c.selected && !c.rejected).length
   const rendered = candidates.filter((c) => c.exports.length > 0)
+  const compliantRendered = rendered.filter((c) => c.exports[0]?.compliance_status !== 'FAILED')
 
   const updateCandidate = (c: Candidate) => setCandidates((list) => list.map((x) => (x.id === c.id ? c : x)))
+
+  const uploadAllToYouTube = async () => {
+    // Check YouTube connection status
+    let publishStatus: any = null
+    try {
+      publishStatus = await api('/api/publish')
+    } catch (e) {
+      setToast({ msg: 'Could not check YouTube connection status', kind: 'bad' })
+      return
+    }
+
+    if (!publishStatus?.connections?.youtube?.connected) {
+      setToast({ msg: 'YouTube is not connected. Connect it in Settings → Connected accounts.', kind: 'bad' })
+      return
+    }
+    if (compliantRendered.length === 0) {
+      setToast({ msg: 'No compliant clips to upload', kind: 'bad' })
+      return
+    }
+    if (!window.confirm(`Upload ${compliantRendered.length} clip(s) to YouTube? They will be uploaded as PUBLIC videos (visible to everyone).`)) {
+      return
+    }
+
+    setBatchUploading(true)
+    const newStatus: Record<string, 'pending' | 'uploading' | 'done' | 'error'> = {}
+    compliantRendered.forEach(c => { newStatus[c.id] = 'pending' })
+    setUploadStatus(newStatus)
+
+    let successCount = 0
+    for (const candidate of compliantRendered) {
+      try {
+        setUploadStatus(prev => ({ ...prev, [candidate.id]: 'uploading' }))
+
+        // Use the existing publish API with sensible defaults
+        const postingCopy = candidate.posting_copy
+        await api('/api/publish/clip', {
+          method: 'POST',
+          json: {
+            candidate_pk: candidate.id,
+            variant: 'A', // Default to variant A (with hook overlay)
+            targets: [{
+              platform: 'youtube',
+              title: postingCopy?.youtube_title || candidate.topic.substring(0, 100),
+              description: postingCopy?.youtube_description || '',
+              tags: postingCopy?.hashtags || [],
+              privacy: 'public', // Upload as public so videos are visible to everyone
+              made_for_kids: false,
+            }],
+            confirm: true,
+          },
+        })
+
+        setUploadStatus(prev => ({ ...prev, [candidate.id]: 'done' }))
+        successCount++
+      } catch (e) {
+        console.error(`Failed to upload clip ${candidate.id}:`, e)
+        setUploadStatus(prev => ({ ...prev, [candidate.id]: 'error' }))
+      }
+    }
+
+    setBatchUploading(false)
+    setToast({
+      msg: `Upload complete! ${successCount}/${compliantRendered.length} clip(s) uploaded to YouTube.`,
+      kind: successCount > 0 ? 'info' : 'bad'
+    })
+
+    // Clear status after a delay
+    setTimeout(() => setUploadStatus({}), 5000)
+  }
 
   const startAnalysis = async (forceYoutube = false) => {
     try {
@@ -229,8 +301,8 @@ export default function ProjectView({ projectId, settings }: { projectId: string
             <b>Waiting for YouTube.</b> YouTube is blocking downloads from this connection for now. ClipForge will try again
             automatically{project.youtube_retry.retry_at ? ` at ${new Date(project.youtube_retry.retry_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ' shortly'}
             {project.youtube_retry.attempts > 1 ? ` (blocked ${project.youtube_retry.attempts} times so far)` : ''} and
-            start the analysis as soon as the download works. Keep ClipForge running. You can also upload the file or paste a
-            Drive/Dropbox link below.
+            start the analysis as soon as the download works. Keep ClipForge running. You can also configure a proxy in <b>Settings</b>,
+            switch your network / hotspot, or upload the file / paste a Drive link below.
           </span>
           <div className="row">
             <button className="btn sm" onClick={() => startAnalysis(true)} title="Sends one request to YouTube now">Try now</button>
@@ -472,8 +544,24 @@ export default function ProjectView({ projectId, settings }: { projectId: string
               {rendered.length > 0 && (
                 <div className="banner info">
                   <b>{rendered.length} clip(s) rendered.</b>
-                  <span className="grow small">Exports: <code>{project.paths.exports}</code><br />Ready to post: <code>{project.paths.ready_to_post}</code></span>
-                  <button className="btn sm" onClick={() => openFolder('ready_to_post')}>Open folder</button>
+                  <span className="grow small">
+                    Exports: <code>{project.paths.exports}</code><br />
+                    Ready to post: <code>{project.paths.ready_to_post}</code>
+                  </span>
+                  {batchUploading && (
+                    <span className="badge info" style={{ marginLeft: 8 }}>
+                      Uploading... {Object.values(uploadStatus).filter(s => s === 'done').length}/{rendered.length}
+                    </span>
+                  )}
+                  <button
+                    className="btn primary"
+                    disabled={batchUploading}
+                    onClick={uploadAllToYouTube}
+                    title="Upload all rendered clips to YouTube as public videos"
+                  >
+                    {batchUploading ? '⏳ Uploading...' : `📤 Upload to YouTube`}
+                  </button>
+                  <button className="btn sm" onClick={() => openFolder('ready_to_post')}>Open Ready to post</button>
                 </div>
               )}
 

@@ -173,17 +173,31 @@ class _YtLogger:
 
 def download_youtube(url: str, dest_dir: Path, on_progress: Callable[[float, str], None] | None = None,
                      max_stalls: int = 6, max_attempts: int = 40,
-                     sleep: Callable[[float], None] = time.sleep) -> tuple[Path, dict[str, Any]]:
+                     sleep: Callable[[float], None] = time.sleep,
+                     proxy: str | None = None) -> tuple[Path, dict[str, Any]]:
     """Download a PUBLIC video. No cookies, no login, no restriction bypass.
 
     Large downloads survive dropped connections: yt-dlp retries internally, downloads in chunks,
     and partial files are resumed on the next attempt instead of starting over.
+    Supports routing requests through an HTTP/HTTPS/SOCKS5 proxy.
     """
+    import shutil
+
     import yt_dlp
+
+    if proxy is None:
+        try:
+            from ..config import get_settings
+            from .preferences import get_preferences
+
+            proxy = (get_preferences().proxy_url or get_settings().clipforge_proxy or "").strip() or None
+        except Exception:
+            proxy = None
 
     url = validate_youtube_url(url)
     dest_dir.mkdir(parents=True, exist_ok=True)
     ytlog = _YtLogger()
+    node_bin = shutil.which("node")
     base_opts: dict[str, Any] = {
         "quiet": True,
         "no_warnings": False,
@@ -197,6 +211,12 @@ def download_youtube(url: str, dest_dir: Path, on_progress: Callable[[float, str
         "socket_timeout": 30,
         "extractor_retries": 3,
     }
+    if node_bin:
+        base_opts["js_runtimes"] = {"node": {"path": node_bin}}
+    if proxy:
+        base_opts["proxy"] = proxy
+        safe_proxy = re.sub(r"://([^:@]+):([^@]+)@", r"://\1:***@", proxy)
+        log.info("Routing YouTube download through proxy: %s", safe_proxy)
     try:
         with yt_dlp.YoutubeDL(base_opts) as ydl:
             info = ydl.extract_info(url, download=False)

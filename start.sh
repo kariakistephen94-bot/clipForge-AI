@@ -121,7 +121,11 @@ cleanup() { for p in "${PIDS[@]:-}"; do kill "$p" 2>/dev/null || true; done; }
 trap cleanup EXIT INT TERM
 
 step "Starting backend on http://127.0.0.1:$PORT"
-"$VENV/bin/python" -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port "$PORT" &
+UVICORN_EXTRA=()
+if [ "$MODE" = "--dev" ]; then
+  UVICORN_EXTRA=(--reload --reload-dir "$ROOT/backend")
+fi
+"$VENV/bin/python" -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port "$PORT" "${UVICORN_EXTRA[@]}" &
 PIDS+=($!)
 
 for _ in $(seq 1 60); do

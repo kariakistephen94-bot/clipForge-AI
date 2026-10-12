@@ -109,6 +109,14 @@ def record_success() -> list[str]:
     return waiting
 
 
+def clear_block() -> None:
+    """Clear the network-wide YouTube block (e.g. after configuring a proxy or switching networks)."""
+    with _lock:
+        data = _load()
+        data.update(blocked_until=None, wait_s=0, attempts=0, blocked_since=None)
+        _save(data)
+
+
 def cancel(project_id: str) -> bool:
     with _lock:
         data = _load()

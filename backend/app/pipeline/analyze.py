@@ -146,13 +146,17 @@ def _run(project_id: str, tracker: JobTracker, opts: dict[str, Any]) -> None:
             tracker.step("source", progress=frac * 0.8 if frac >= 0 else None, detail=detail)
 
         if S["origin"] == "youtube":
+            proxy_url = opts.get("proxy_url") or prefs.proxy_url or None
             until = youtube_retry.blocked_until()
-            if until and not (opts.get("_scheduled") or opts.get("force_youtube")):
+            if until and not (opts.get("_scheduled") or opts.get("force_youtube") or opts.get("proxy_url")):
                 raise YouTubeBlockedError(
                     "YouTube is currently blocking downloads from this connection, so ClipForge AI is waiting "
                     "instead of sending more requests (more requests tend to make the block last longer).",
                     held_back=True)
-            path, info = download_youtube(S["url"], project_dir(project_id, "source"), on_progress=dl_progress)
+            kw: dict[str, Any] = {}
+            if proxy_url:
+                kw["proxy"] = proxy_url
+            path, info = download_youtube(S["url"], project_dir(project_id, "source"), on_progress=dl_progress, **kw)
             title = info.get("title") or "youtube"
         else:
             path, title = download_shared_file(S["url"], project_dir(project_id, "source"),

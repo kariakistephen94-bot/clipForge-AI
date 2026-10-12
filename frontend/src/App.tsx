@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, type SettingsResponse, type SystemInfo } from './api'
 import Dashboard from './components/Dashboard'
+import IdeaGenerator from './components/IdeaGenerator'
+import POVStudio from './components/POVStudio'
 import ProjectView from './components/ProjectView'
 import SettingsPage from './components/Settings'
 
@@ -30,7 +32,15 @@ export default function App() {
   }, [loadSettings])
 
   const projectMatch = route.match(/^#\/project\/([a-zA-Z0-9_-]+)/)
-  const page = projectMatch ? 'project' : route.startsWith('#/settings') ? 'settings' : 'dashboard'
+  const page = projectMatch
+    ? 'project'
+    : route.startsWith('#/pov')
+    ? 'pov'
+    : route.startsWith('#/ideas')
+    ? 'ideas'
+    : route.startsWith('#/settings')
+    ? 'settings'
+    : 'dashboard'
 
   return (
     <>
@@ -40,6 +50,8 @@ export default function App() {
         </a>
         <nav className="nav">
           <a href="#/" className={page === 'dashboard' ? 'active' : ''}>Dashboard</a>
+          <a href="#/ideas" className={page === 'ideas' ? 'active' : ''}>💡 Ideas</a>
+          <a href="#/pov" className={page === 'pov' ? 'active' : ''}>🎬 POV Studio</a>
           <a href="#/settings" className={page === 'settings' ? 'active' : ''}>Settings</a>
         </nav>
         <div className="spacer" />
@@ -65,6 +77,8 @@ export default function App() {
           </div>
         )}
         {page === 'dashboard' && <Dashboard system={system} settings={settings} />}
+        {page === 'ideas' && <IdeaGenerator />}
+        {page === 'pov' && <POVStudio />}
         {page === 'project' && projectMatch && <ProjectView key={projectMatch[1]} projectId={projectMatch[1]} settings={settings} />}
         {page === 'settings' && <SettingsPage settings={settings} system={system} onSaved={loadSettings} />}
       </main>

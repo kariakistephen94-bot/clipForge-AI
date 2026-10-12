@@ -9,6 +9,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -152,6 +153,30 @@ def put_settings(body: dict[str, Any]) -> dict[str, Any]:
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     return {"preferences": prefs.model_dump()}
+
+
+@router.post("/utils/test-proxy")
+def test_proxy_api(body: dict[str, Any]) -> dict[str, Any]:
+    url = str(body.get("proxy_url") or "").strip()
+    if not url:
+        raise HTTPException(400, "Proxy URL is required.")
+    if "://" not in url:
+        url = f"http://{url}"
+    proto = url.split("://", 1)[0].lower()
+    if proto not in ("http", "https", "socks4", "socks5", "socks5h"):
+        raise HTTPException(400, f"Unsupported proxy protocol: '{proto}'. Use http://, https://, or socks5://")
+    t0 = time.perf_counter()
+    try:
+        import httpx
+
+        with httpx.Client(proxy=url, timeout=12.0) as client:
+            resp = client.get("https://api.ipify.org?format=json")
+            resp.raise_for_status()
+            ip = resp.json().get("ip", "")
+        latency_ms = round((time.perf_counter() - t0) * 1000)
+        return {"ok": True, "ip": ip, "latency_ms": latency_ms, "proxy": url}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "latency_ms": round((time.perf_counter() - t0) * 1000)}
 
 
 @router.post("/utils/choose-folder")

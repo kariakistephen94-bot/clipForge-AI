@@ -12,6 +12,8 @@ export default function SettingsPage({ settings, system, onSaved }: {
   const [prefs, setPrefs] = useState<Preferences | null>(null)
   const [toast, setToast] = useState<{ msg: string; kind: 'info' | 'bad' } | null>(null)
   const [libKey, setLibKey] = useState(0)
+  const [testingProxy, setTestingProxy] = useState(false)
+  const [proxyTestResult, setProxyTestResult] = useState<{ ok: boolean; ip?: string; latency_ms?: number; error?: string } | null>(null)
 
   useEffect(() => {
     if (settings) setPrefs(settings.preferences)
@@ -23,6 +25,27 @@ export default function SettingsPage({ settings, system, onSaved }: {
   const setOverride = (k: string, v: string | number | boolean) => set('caption_overrides', { ...prefs.caption_overrides, [k]: v })
   const styleDefaults = settings.caption_styles[prefs.caption_style] ?? {}
   const ov = (k: string) => (prefs.caption_overrides[k] ?? styleDefaults[k] ?? '') as string | number | boolean
+
+  const testProxy = async () => {
+    const raw = prefs.proxy_url?.trim()
+    if (!raw) {
+      setProxyTestResult({ ok: false, error: 'Enter a proxy URL first' })
+      return
+    }
+    setTestingProxy(true)
+    setProxyTestResult(null)
+    try {
+      const res = await api<{ ok: boolean; ip?: string; latency_ms?: number; error?: string }>('/api/utils/test-proxy', {
+        method: 'POST',
+        json: { proxy_url: raw },
+      })
+      setProxyTestResult(res)
+    } catch (e) {
+      setProxyTestResult({ ok: false, error: (e as Error).message })
+    } finally {
+      setTestingProxy(false)
+    }
+  }
 
   const save = async () => {
     try {
@@ -101,6 +124,58 @@ export default function SettingsPage({ settings, system, onSaved }: {
               <dt>Workspace</dt><dd className="mono tiny">{system.workspace}</dd>
             </dl>
           )}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-title">
+          <h2>Download Proxy (YouTube & Sources)</h2>
+          <span className="sub">Route downloads through a proxy or rotating proxy service</span>
+        </div>
+        <div className="stack" style={{ gap: 12 }}>
+          <label className="field">
+            <span>Proxy URL (HTTP, HTTPS, or SOCKS5)</span>
+            <div className="row" style={{ gap: 8 }}>
+              <input
+                type="text"
+                placeholder="e.g. http://127.0.0.1:8080 or socks5://user:pass@proxy.example.com:1080"
+                value={prefs.proxy_url ?? ''}
+                onChange={(e) => {
+                  set('proxy_url', e.target.value)
+                  setProxyTestResult(null)
+                }}
+                style={{ flex: 1 }}
+              />
+              <button
+                type="button"
+                className="btn sm"
+                onClick={testProxy}
+                disabled={testingProxy || !prefs.proxy_url?.trim()}
+              >
+                {testingProxy ? 'Testing…' : 'Test Proxy'}
+              </button>
+            </div>
+          </label>
+
+          {proxyTestResult && (
+            <div className={`banner ${proxyTestResult.ok ? 'ok' : 'bad'}`} style={{ margin: 0 }}>
+              {proxyTestResult.ok ? (
+                <span>
+                  <b>✓ Proxy verified.</b> Outgoing IP: <code>{proxyTestResult.ip}</code> ({proxyTestResult.latency_ms} ms latency).
+                </span>
+              ) : (
+                <span>
+                  <b>✗ Connection test failed:</b> {proxyTestResult.error}
+                </span>
+              )}
+            </div>
+          )}
+
+          <div className="tiny muted">
+            Use this to bypass YouTube's <i>"confirm you're not a bot"</i> network blocks or rate limits.
+            Supports rotating residential proxies, datacenter proxies, and local SOCKS5 tunnels.
+            Saving a new proxy automatically clears any active YouTube retry cooldown so you can try downloading immediately.
+          </div>
         </div>
       </div>
 

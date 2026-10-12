@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     gemini_model: str = ""
     gemini_timeout_s: int = 600
 
+    # OpenAI (POV video generator)
+    open_ai_lisbon_api_key: str = ""
+
     clipforge_workspace: Path = ROOT_DIR / "workspace"
     clipforge_log_dir: Path = ROOT_DIR / "logs"
     clipforge_host: str = "127.0.0.1"
@@ -45,6 +48,9 @@ class Settings(BaseSettings):
     ffmpeg_bin: str = "ffmpeg"
     ffprobe_bin: str = "ffprobe"
 
+    # Optional proxy for YouTube downloads (e.g. http://127.0.0.1:8080, socks5://127.0.0.1:1080)
+    clipforge_proxy: str = ""
+
     # Upload guard (bytes). Gemini's Files API accepts up to 2 GB; larger sources get a proxy.
     max_upload_bytes: int = 20 * 1024**3
 
@@ -55,6 +61,10 @@ class Settings(BaseSettings):
     @property
     def gemini_configured(self) -> bool:
         return bool(self.gemini_api_key.strip())
+
+    @property
+    def openai_configured(self) -> bool:
+        return bool(self.open_ai_lisbon_api_key.strip())
 
     @property
     def workspace(self) -> Path:
